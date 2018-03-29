@@ -1,0 +1,3 @@
+<launch>
+<node pkg="allocentric_monitor" type="allocentric_monitor_node.py" name="allocentric_monitor" args="base"/>
+</launch>
