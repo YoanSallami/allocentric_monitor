@@ -18,6 +18,7 @@ logging.basicConfig(level=logging.INFO)
 
 EPSILON = 0.005  # 5mm
 HYSTERESIS_DELTA = 0.02  # 2cm
+DELTA = 0.5  # 50cm
 
 class AllocentricMonitor(object):
     def __init__(self, ctx, source_world):
@@ -103,7 +104,7 @@ class AllocentricMonitor(object):
         """
         d1 = self.characteristic_dimension(bb1)
         d2 = self.characteristic_dimension(bb2)
-        return d1 > d2 + EPSILON
+        return d1 > d2 + DELTA
 
     def isabove(self, bb1, bb2, prev=False):
         """
@@ -182,7 +183,6 @@ class AllocentricMonitor(object):
         self.current_situations_map[description] = sit
         self.ros_pub["situation_log"].publish("START " + description)
         self.source.timeline.update(sit)
-        #rospy.logwarn(description)
         return sit.id
 
     def start_n1_situation(self, predicate, subject_name):
@@ -192,7 +192,6 @@ class AllocentricMonitor(object):
         self.current_situations_map[description] = sit
         self.ros_pub["situation_log"].publish("START " + description)
         self.source.timeline.update(sit)
-        #rospy.logwarn(description)
         return sit.id
 
     def end_n1_situation(self, predicate, subject_name):
@@ -222,13 +221,12 @@ class AllocentricMonitor(object):
         return isobject
 
     def compute_relations(self, scene):
-
         boundingboxes = {}
         for node in scene.nodes:
             if self.isobject(scene, node):
                 if node.properties["aabb"]:
                     boundingboxes[node] = get_bounding_box_for_node(scene, node)
-        return self.allocentric_relations(boundingboxes)
+        self.allocentric_relations(boundingboxes)
 
     def allocentric_relations(self, boundingboxes):
 
@@ -291,14 +289,11 @@ class AllocentricMonitor(object):
                     else:
                         self.object_in[n] = [n2]
 
-                # if self.isbigger(bb, bb2, prev_bigger):
-                #     if n in self.object_bigger:
-                #         self.object_bigger[n].append(n2)
-                #     else:
-                #         self.object_bigger[n] = [n2]
-
-        #rospy.logwarn(self.object_bigger)
-        #rospy.logwarn(self.previous_object_bigger)
+                if self.isbigger(bb, bb2, prev_bigger):
+                    if n in self.object_bigger:
+                        self.object_bigger[n].append(n2)
+                    else:
+                        self.object_bigger[n] = [n2]
 
         self.compute_situations()
 
