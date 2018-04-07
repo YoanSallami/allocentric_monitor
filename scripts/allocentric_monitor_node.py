@@ -18,7 +18,10 @@ logging.basicConfig(level=logging.INFO)
 
 EPSILON = 0.005  # 5mm
 HYSTERESIS_DELTA = 0.02  # 2cm
-DELTA = 0.5  # 50cm
+DELTA = 0.2  # 20cm
+
+CLOSE_MAX_DIST = 1.0  # 1m
+NEAR_MAX_DIST = 2.0  # 2m
 
 class AllocentricMonitor(object):
     def __init__(self, ctx, source_world):
@@ -41,6 +44,9 @@ class AllocentricMonitor(object):
 
         self.previous_object_close = {}
         self.object_close = {}
+
+        self.previous_object_near = {}
+        self.object_near = {}
 
     def bb_center(self, bb):
 
@@ -166,15 +172,22 @@ class AllocentricMonitor(object):
     def isclose(self, bb1, bb2, prev=False):
         """ Returns True if the first object is close to the second.
 
-        More precisely, returns True if the first bounding box is within a radius R
-        (R = 2 X second bounding box dimension) of the second bounding box.
-
-        Note that in general, isclose(bb1, bb2) != isclose(bb2, bb1)
         """
         dist = self.distance(bb1, bb2)
+        dim1 = self.characteristic_dimension(bb1)
         dim2 = self.characteristic_dimension(bb2)
 
-        return dist < 2 * dim2
+        return dist < CLOSE_MAX_DIST - (dim2/2 + dim1/2)
+
+    def isnear(self, bb1, bb2, prev=False):
+        """ Returns True if the first object is near to the second.
+
+        """
+        dist = self.distance(bb1, bb2)
+        dim1 = self.characteristic_dimension(bb1)
+        dim2 = self.characteristic_dimension(bb2)
+
+        return dist < NEAR_MAX_DIST - (dim2/2 + dim1/2)
 
     def start_n2_situation(self, predicate, subject_name, object_name):
         description = predicate+"("+subject_name+","+object_name+")"
@@ -235,6 +248,7 @@ class AllocentricMonitor(object):
         self.object_ontop = {}
         self.object_bigger = {}
         self.object_close = {}
+        self.object_near = {}
 
         for n, bb in boundingboxes.items():
             for n2, bb2 in boundingboxes.items():
@@ -255,6 +269,11 @@ class AllocentricMonitor(object):
                 if n in self.previous_object_close:
                     if n2 in self.previous_object_close[n]:
                         prev_close = True
+
+                prev_near = False
+                if n in self.previous_object_near:
+                    if n2 in self.previous_object_near[n]:
+                        prev_near = True
 
                 prev_in = False
                 if n in self.previous_object_in:
@@ -283,6 +302,12 @@ class AllocentricMonitor(object):
                     else:
                         self.object_close[n] = [n2]
 
+                if self.isnear(bb, bb2, prev_near):
+                    if n in self.object_near:
+                        self.object_near[n].append(n2)
+                    else:
+                        self.object_near[n] = [n2]
+
                 if self.isin(bb, bb2, prev_in):
                     if n in self.object_in:
                         self.object_in[n].append(n2)
@@ -302,92 +327,110 @@ class AllocentricMonitor(object):
         for n, nodes_above in self.object_above.items():
             if n not in self.previous_object_above:
                 for n2 in nodes_above:
-                    self.start_n2_situation("above", n.name, n2.name)
+                    self.start_n2_situation("isAbove", n.name, n2.name)
             else:
                 for n2 in nodes_above:
                     if n2 not in self.previous_object_above[n]:
-                        self.start_n2_situation("above", n.name, n2.name)
+                        self.start_n2_situation("isAbove", n.name, n2.name)
 
         for n, nodes_above in self.previous_object_above.items():
             if n not in self.object_above:
                 for n2 in nodes_above:
-                    self.end_n2_situation("above", n.name, n2.name)
+                    self.end_n2_situation("isAbove", n.name, n2.name)
             else:
                 for n2 in nodes_above:
                     if n2 not in self.object_above[n]:
-                        self.end_n2_situation("above", n.name, n2.name)
+                        self.end_n2_situation("isAbove", n.name, n2.name)
 
         for n, nodes_ontop in self.object_ontop.items():
             if n not in self.previous_object_ontop:
                 for n2 in nodes_ontop:
-                    self.start_n2_situation("ontop", n.name, n2.name)
+                    self.start_n2_situation("isOntop", n.name, n2.name)
             else:
                 for n2 in nodes_ontop:
                     if n2 not in self.previous_object_ontop[n]:
-                        self.start_n2_situation("ontop", n.name, n2.name)
+                        self.start_n2_situation("isOntop", n.name, n2.name)
 
         for n, nodes_ontop in self.previous_object_ontop.items():
             if n not in self.object_ontop:
                 for n2 in nodes_ontop:
-                    self.end_n2_situation("ontop", n.name, n2.name)
+                    self.end_n2_situation("isOntop", n.name, n2.name)
             else:
                 for n2 in nodes_ontop:
                     if n2 not in self.object_ontop[n]:
-                        self.end_n2_situation("ontop", n.name, n2.name)
+                        self.end_n2_situation("isOntop", n.name, n2.name)
 
         for n, nodes_close in self.object_close.items():
             if n not in self.previous_object_close:
                 for n2 in nodes_close:
-                    self.start_n2_situation("close", n.name, n2.name)
+                    self.start_n2_situation("isClose", n.name, n2.name)
             else:
                 for n2 in nodes_close:
                     if n2 not in self.previous_object_close[n]:
-                        self.start_n2_situation("close", n.name, n2.name)
+                        self.start_n2_situation("isClose", n.name, n2.name)
 
         for n, nodes_close in self.previous_object_close.items():
             if n not in self.object_close:
                 for n2 in nodes_close:
-                    self.end_n2_situation("close", n.name, n2.name)
+                    self.end_n2_situation("isClose", n.name, n2.name)
             else:
                 for n2 in nodes_close:
                     if n2 not in self.object_close[n]:
-                        self.end_n2_situation("close", n.name, n2.name)
+                        self.end_n2_situation("isClose", n.name, n2.name)
+
+        for n, nodes_near in self.object_near.items():
+            if n not in self.previous_object_near:
+                for n2 in nodes_near:
+                    self.start_n2_situation("isNear", n.name, n2.name)
+            else:
+                for n2 in nodes_near:
+                    if n2 not in self.previous_object_near[n]:
+                        self.start_n2_situation("isNear", n.name, n2.name)
+
+        for n, nodes_near in self.previous_object_near.items():
+            if n not in self.object_near:
+                for n2 in nodes_near:
+                    self.end_n2_situation("isNear", n.name, n2.name)
+            else:
+                for n2 in nodes_near:
+                    if n2 not in self.object_near[n]:
+                        self.end_n2_situation("isNear", n.name, n2.name)
 
         for n, nodes_in in self.object_in.items():
             if n not in self.previous_object_in:
                 for n2 in nodes_in:
-                    self.start_n2_situation("in", n.name, n2.name)
+                    self.start_n2_situation("isIn", n.name, n2.name)
             else:
                 for n2 in nodes_in:
                     if n2 not in self.previous_object_in[n]:
-                        self.start_n2_situation("in", n.name, n2.name)
+                        self.start_n2_situation("isIn", n.name, n2.name)
 
         for n, nodes_in in self.previous_object_in.items():
             if n not in self.object_in:
                 for n2 in nodes_in:
-                    self.end_n2_situation("in", n.name, n2.name)
+                    self.end_n2_situation("isIn", n.name, n2.name)
             else:
                 for n2 in nodes_in:
                     if n2 not in self.object_in[n]:
-                        self.end_n2_situation("in", n.name, n2.name)
+                        self.end_n2_situation("isIn", n.name, n2.name)
 
         for n, nodes_bigger in self.object_bigger.items():
             if n not in self.previous_object_bigger:
                 for n2 in nodes_bigger:
-                    self.start_n2_situation("bigger", n.name, n2.name)
+                    self.start_n2_situation("IsBigger", n.name, n2.name)
             else:
                 for n2 in nodes_bigger:
                     if n2 not in self.previous_object_bigger[n]:
-                        self.start_n2_situation("bigger", n.name, n2.name)
+                        self.start_n2_situation("IsBigger", n.name, n2.name)
 
         for n, nodes_bigger in self.previous_object_bigger.items():
             if n not in self.object_bigger:
                 for n2 in nodes_bigger:
-                    self.end_n2_situation("bigger", n.name, n2.name)
+                    self.end_n2_situation("IsBigger", n.name, n2.name)
             else:
                 for n2 in nodes_bigger:
                     if n2 not in self.object_bigger[n]:
-                        self.end_n2_situation("bigger", n.name, n2.name)
+                        self.end_n2_situation("IsBigger", n.name, n2.name)
 
         self.previous_object_above = self.object_above
         self.previous_object_ontop = self.object_ontop
