@@ -28,7 +28,6 @@ class AllocentricMonitor(object):
         self.source = ctx.worlds[source_world]
         self.source_world_name = source_world
         self.current_situations_map = {}
-        self.ros_pub = {"situation_log": rospy.Publisher("allocentric_monitor/log", String, queue_size=5)}
 
         self.previous_object_in = {}
         self.object_in = {}
@@ -39,14 +38,21 @@ class AllocentricMonitor(object):
         self.previous_object_ontop = {}
         self.object_ontop = {}
 
-        self.previous_object_bigger = {}
-        self.object_bigger = {}
+        #self.previous_object_bigger = {}
+        #self.object_bigger = {}
 
         self.previous_object_close = {}
         self.object_close = {}
 
         self.previous_object_near = {}
         self.object_near = {}
+
+        self.log_pub = {"isClose": rospy.Publisher("predicates_log/close", String, queue_size=5),
+                        "isNear": rospy.Publisher("predicates_log/near", String, queue_size=5),
+                        "isIn": rospy.Publisher("predicates_log/in", String, queue_size=5),
+                        "isAbove": rospy.Publisher("predicates_log/above", String, queue_size=5),
+                        "isOnTop": rospy.Publisher("predicates_log/ontop", String, queue_size=5),
+                        "isBigger": rospy.Publisher("predicates_log/bigger", String, queue_size=5)}
 
     def bb_center(self, bb):
 
@@ -189,41 +195,25 @@ class AllocentricMonitor(object):
 
         return dist < NEAR_MAX_DIST - (dim2/2 + dim1/2)
 
-    def start_n2_situation(self, predicate, subject_name, object_name):
-        description = predicate+"("+subject_name+","+object_name+")"
+    def start_predicate(self, timeline, predicate, subject_name, object_name, isevent=False):
+        description = predicate + "(" + subject_name + "," + object_name + ")"
         sit = Situation(desc=description)
         sit.starttime = time.time()
+        if isevent:
+            sit.endtime = sit.starttime
         self.current_situations_map[description] = sit
-        self.ros_pub["situation_log"].publish("START " + description)
-        self.source.timeline.update(sit)
+        self.log_pub[predicate].publish("START " + description)
+        timeline.update(sit)
         return sit.id
 
-    def start_n1_situation(self, predicate, subject_name):
-        description = predicate+"("+subject_name+")"
-        sit = Situation(desc=description)
-        sit.starttime = time.time()
-        self.current_situations_map[description] = sit
-        self.ros_pub["situation_log"].publish("START " + description)
-        self.source.timeline.update(sit)
-        return sit.id
-
-    def end_n1_situation(self, predicate, subject_name):
-        description = predicate+"("+subject_name+")"
+    def end_predicate(self, timeline, predicate, subject_name, object_name):
+        description = predicate + "(" + subject_name + "," + object_name + ")"
         sit = self.current_situations_map[description]
-        self.ros_pub["situation_log"].publish("END "+description)
+        self.log_pub[predicate].publish("END " + description)
         try:
-            self.source.timeline.end(sit)
+            timeline.end(sit)
         except Exception as e:
-            rospy.logwarn("[allocentric_monitor] Exception occurred : "+str(e))
-
-    def end_n2_situation(self, predicate, subject_name, object_name):
-        description = predicate+"("+subject_name+","+object_name+")"
-        sit = self.current_situations_map[description]
-        self.ros_pub["situation_log"].publish("END "+description)
-        try:
-            self.source.timeline.end(sit)
-        except Exception as e:
-            rospy.logwarn("[allocentric_monitor] Exception occurred : "+str(e))
+            rospy.logwarn("[allocentric_monitor] Exception occurred : " + str(e))
 
     def isobject(self, scene, node):
         isobject = False
@@ -246,7 +236,7 @@ class AllocentricMonitor(object):
         self.object_in = {}
         self.object_above = {}
         self.object_ontop = {}
-        self.object_bigger = {}
+        #self.object_bigger = {}
         self.object_close = {}
         self.object_near = {}
 
@@ -280,10 +270,10 @@ class AllocentricMonitor(object):
                     if n2 in self.previous_object_in[n]:
                         prev_in = True
 
-                prev_bigger = False
-                if n in self.previous_object_bigger:
-                    if n2 in self.previous_object_bigger[n]:
-                        prev_bigger = True
+                # prev_bigger = False
+                # if n in self.previous_object_bigger:
+                #     if n2 in self.previous_object_bigger[n]:
+                #         prev_bigger = True
 
                 if self.isabove(bb, bb2, prev_above):
                     if n in self.object_above:
@@ -314,11 +304,11 @@ class AllocentricMonitor(object):
                     else:
                         self.object_in[n] = [n2]
 
-                if self.isbigger(bb, bb2, prev_bigger):
-                    if n in self.object_bigger:
-                        self.object_bigger[n].append(n2)
-                    else:
-                        self.object_bigger[n] = [n2]
+                # if self.isbigger(bb, bb2, prev_bigger):
+                #     if n in self.object_bigger:
+                #         self.object_bigger[n].append(n2)
+                #     else:
+                #         self.object_bigger[n] = [n2]
 
         self.compute_situations()
 
@@ -327,115 +317,116 @@ class AllocentricMonitor(object):
         for n, nodes_above in self.object_above.items():
             if n not in self.previous_object_above:
                 for n2 in nodes_above:
-                    self.start_n2_situation("isAbove", n.name, n2.name)
+                    self.start_predicate(self.source.timeline, "isAbove", n.name, n2.name)
             else:
                 for n2 in nodes_above:
                     if n2 not in self.previous_object_above[n]:
-                        self.start_n2_situation("isAbove", n.name, n2.name)
+                        self.start_predicate(self.source.timeline, "isAbove", n.name, n2.name)
 
         for n, nodes_above in self.previous_object_above.items():
             if n not in self.object_above:
                 for n2 in nodes_above:
-                    self.end_n2_situation("isAbove", n.name, n2.name)
+                    self.end_predicate(self.source.timeline, "isAbove", n.name, n2.name)
             else:
                 for n2 in nodes_above:
                     if n2 not in self.object_above[n]:
-                        self.end_n2_situation("isAbove", n.name, n2.name)
+                        self.end_predicate(self.source.timeline, "isAbove", n.name, n2.name)
 
         for n, nodes_ontop in self.object_ontop.items():
             if n not in self.previous_object_ontop:
                 for n2 in nodes_ontop:
-                    self.start_n2_situation("isOntop", n.name, n2.name)
+                    self.start_predicate(self.source.timeline, "isOnTop", n.name, n2.name)
             else:
                 for n2 in nodes_ontop:
                     if n2 not in self.previous_object_ontop[n]:
-                        self.start_n2_situation("isOntop", n.name, n2.name)
+                        self.start_predicate(self.source.timeline, "isOnTop", n.name, n2.name)
 
         for n, nodes_ontop in self.previous_object_ontop.items():
             if n not in self.object_ontop:
                 for n2 in nodes_ontop:
-                    self.end_n2_situation("isOntop", n.name, n2.name)
+                    self.end_predicate(self.source.timeline, "isOnTop", n.name, n2.name)
             else:
                 for n2 in nodes_ontop:
                     if n2 not in self.object_ontop[n]:
-                        self.end_n2_situation("isOntop", n.name, n2.name)
+                        self.end_predicate(self.source.timeline, "isOnTop", n.name, n2.name)
 
         for n, nodes_close in self.object_close.items():
             if n not in self.previous_object_close:
                 for n2 in nodes_close:
-                    self.start_n2_situation("isClose", n.name, n2.name)
+                    self.start_predicate(self.source.timeline, "isClose", n.name, n2.name)
             else:
                 for n2 in nodes_close:
                     if n2 not in self.previous_object_close[n]:
-                        self.start_n2_situation("isClose", n.name, n2.name)
+                        self.start_predicate(self.source.timeline, "isClose", n.name, n2.name)
 
         for n, nodes_close in self.previous_object_close.items():
             if n not in self.object_close:
                 for n2 in nodes_close:
-                    self.end_n2_situation("isClose", n.name, n2.name)
+                    self.end_predicate(self.source.timeline, "isClose", n.name, n2.name)
             else:
                 for n2 in nodes_close:
                     if n2 not in self.object_close[n]:
-                        self.end_n2_situation("isClose", n.name, n2.name)
+                        self.end_predicate(self.source.timeline, "isClose", n.name, n2.name)
 
         for n, nodes_near in self.object_near.items():
             if n not in self.previous_object_near:
                 for n2 in nodes_near:
-                    self.start_n2_situation("isNear", n.name, n2.name)
+                    self.start_predicate(self.source.timeline, "isNear", n.name, n2.name)
             else:
                 for n2 in nodes_near:
                     if n2 not in self.previous_object_near[n]:
-                        self.start_n2_situation("isNear", n.name, n2.name)
+                        self.start_predicate(self.source.timeline, "isNear", n.name, n2.name)
 
         for n, nodes_near in self.previous_object_near.items():
             if n not in self.object_near:
                 for n2 in nodes_near:
-                    self.end_n2_situation("isNear", n.name, n2.name)
+                    self.end_predicate(self.source.timeline, "isNear", n.name, n2.name)
             else:
                 for n2 in nodes_near:
                     if n2 not in self.object_near[n]:
-                        self.end_n2_situation("isNear", n.name, n2.name)
+                        self.end_predicate(self.source.timeline, "isNear", n.name, n2.name)
 
         for n, nodes_in in self.object_in.items():
             if n not in self.previous_object_in:
                 for n2 in nodes_in:
-                    self.start_n2_situation("isIn", n.name, n2.name)
+                    self.start_predicate(self.source.timeline, "isIn", n.name, n2.name)
             else:
                 for n2 in nodes_in:
                     if n2 not in self.previous_object_in[n]:
-                        self.start_n2_situation("isIn", n.name, n2.name)
+                        self.start_predicate(self.source.timeline, "isIn", n.name, n2.name)
 
         for n, nodes_in in self.previous_object_in.items():
             if n not in self.object_in:
                 for n2 in nodes_in:
-                    self.end_n2_situation("isIn", n.name, n2.name)
+                    self.end_predicate(self.source.timeline, "isIn", n.name, n2.name)
             else:
                 for n2 in nodes_in:
                     if n2 not in self.object_in[n]:
-                        self.end_n2_situation("isIn", n.name, n2.name)
+                        self.end_predicate(self.source.timeline, "isIn", n.name, n2.name)
 
-        for n, nodes_bigger in self.object_bigger.items():
-            if n not in self.previous_object_bigger:
-                for n2 in nodes_bigger:
-                    self.start_n2_situation("IsBigger", n.name, n2.name)
-            else:
-                for n2 in nodes_bigger:
-                    if n2 not in self.previous_object_bigger[n]:
-                        self.start_n2_situation("IsBigger", n.name, n2.name)
-
-        for n, nodes_bigger in self.previous_object_bigger.items():
-            if n not in self.object_bigger:
-                for n2 in nodes_bigger:
-                    self.end_n2_situation("IsBigger", n.name, n2.name)
-            else:
-                for n2 in nodes_bigger:
-                    if n2 not in self.object_bigger[n]:
-                        self.end_n2_situation("IsBigger", n.name, n2.name)
+        # for n, nodes_bigger in self.object_bigger.items():
+        #     if n not in self.previous_object_bigger:
+        #         for n2 in nodes_bigger:
+        #             self.start_predicate(self.source.timeline, "isBigger", n.name, n2.name)
+        #     else:
+        #         for n2 in nodes_bigger:
+        #             if n2 not in self.previous_object_bigger[n]:
+        #                 self.start_predicate(self.source.timeline, "isBigger", n.name, n2.name)
+        #
+        # for n, nodes_bigger in self.previous_object_bigger.items():
+        #     if n not in self.object_bigger:
+        #         for n2 in nodes_bigger:
+        #             self.end_predicate(self.source.timeline, "isBigger", n.name, n2.name)
+        #     else:
+        #         for n2 in nodes_bigger:
+        #             if n2 not in self.object_bigger[n]:
+        #                 self.end_predicate(self.source.timeline, "isBigger", n.name, n2.name)
 
         self.previous_object_above = self.object_above
         self.previous_object_ontop = self.object_ontop
-        self.previous_object_bigger = self.object_bigger
+        #self.previous_object_bigger = self.object_bigger
         self.previous_object_close = self.object_close
+        self.previous_object_near = self.object_near
         self.previous_object_in = self.object_in
 
     def runOnce(self):
